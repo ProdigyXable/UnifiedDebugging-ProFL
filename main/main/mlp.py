@@ -30,10 +30,9 @@ def processNumFeats(data):
 
             if(item == 10000000):
                 item = 1000 # Reduce highest value improve results
-            
-                row_data.append(float(item))
-
+            row_data.append(float(item))
         result.append(row_data)
+        
     return result
 
 # Process specific rows of the feature dataset
@@ -81,9 +80,9 @@ def readClassFeats(dir, project):
 
             id = f.split(".")[0]
             data[id] = []
-            data_sigs[id] = []
-
             data[id].extend(numpy.array(processed_data))
+            
+            data_sigs[id] = []
             data_sigs[id].extend(sigs)
     return (data, data_sigs)
 
@@ -140,12 +139,13 @@ def model():
             # Create training data from input by EXCLUDING project we want to predict (this becomes test_data)
             for other_project in raw_input_train.keys():
                 if not project_prediction_id is other_project:
+                    
                     training_data_input.extend(raw_input_train[other_project])
                     training_data_output.extend(raw_output_train[other_project])
 
             training_data_input = tensorflow.keras.utils.normalize(numpy.array(training_data_input)) # Normalize data
             training_data_output = numpy.array(training_data_output)
-            training_data_output = tensorflow.keras.utils.to_categorical(training_data_output, CLASSES)
+            
             
             # Test data is the project we are trying to predict (e.g. Chart-1)
             test_data_input = tensorflow.keras.utils.normalize(numpy.array(raw_input_train[project_prediction_id]))
@@ -155,6 +155,8 @@ def model():
             class_weights = {}
             class_weights[0] = 1
             class_weights[1] = setClassWeight(training_data_output)
+
+            training_data_output = tensorflow.keras.utils.to_categorical(training_data_output, CLASSES)
 
             print("Class weights set to", class_weights)
 
@@ -185,7 +187,6 @@ def model():
                # Save new suspicious values to local file
                output_file.write(",".join([sigs[project_prediction_id][k], str(i[prediction])]))
                output_file.write("\n")
-
         
             print("\n", "----------------", "\n")
             output_file.close()
@@ -211,8 +212,8 @@ def setClassWeight(data):
 def getCallback():
     return [
             tensorflow.keras.callbacks.TerminateOnNaN(),
-            tensorflow.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=EPOCHS / 50, restore_best_weights=False),
-            tensorflow.keras.callbacks.EarlyStopping(monitor='val_loss', patience=EPOCHS / 100, restore_best_weights=False, min_delta=0.0001)
+            tensorflow.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=EPOCHS / 50, restore_best_weights=True),
+            tensorflow.keras.callbacks.EarlyStopping(monitor='val_loss', patience=EPOCHS / 100, restore_best_weights=True, min_delta=0.0001)
             ]
 
 model()
