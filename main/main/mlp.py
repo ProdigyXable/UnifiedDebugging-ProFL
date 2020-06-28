@@ -5,12 +5,12 @@ import os
 import sys
 
 # --- Machine Learning Hyper Parameters [START] --- #
-BATCH_SIZE = 100
+BATCH_SIZE = 1000
 LEARNING_RATE = 0.001
 EPOCHS = 10000
 CLASSES = 2 # Buggy vs Non-Buggy
-LAYER_NEURONS = 128
-FEATURE_NUM = 124 # 34 + (15 * 6)
+LAYER_NEURONS = 512
+FEATURE_NUM = 130 # 34 + (16 * 6)
 DROPOUT_RATE = 0.3
 # --- Machine Learning Hyper Parameters [END] --- #
 
@@ -42,7 +42,7 @@ def readNumFeats(dir, project):
         #if f.endswith(".numFeats") and not "Math-66" in f and project in f: # Used for intra-project prediction
         if f.endswith(".numFeats") and not "Math-66" in f: # Used for inter-project prediction
 
-            line_data = open(os.path.join(dir, f),"r").readlines()[1:] # Skip the first row (it is a header row with no data)
+            line_data = open(os.path.join(dir, f),"r").readlines()
             processed_data = processNumFeats(line_data)
             
             id = f.split(".")[0]
@@ -177,6 +177,7 @@ def model():
         
             print("--- Prediction Results ---")
 
+            #output_file = open("sbfl-feats-only_" + project_prediction_id + ".susValues", "w")
             #output_file = open("profl-feats-only_" + project_prediction_id + ".susValues", "w")
             output_file = open(project_prediction_id + ".susValues", "w")
             for k, (i) in enumerate(network_model.predict(test_data_input, verbose=1)):
@@ -204,7 +205,7 @@ def setClassWeight(data):
             other += 1
 
     weight = other / positive
-    return weight
+    return weight * 2
 
 # These terminate training during a given K-fold
 # if validation accuracy or validation loss
