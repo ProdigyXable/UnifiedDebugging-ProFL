@@ -30,6 +30,9 @@
     <Compile Include="importPraprFeatures.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="manipulate-features.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="mlp.py">
       <SubType>Code</SubType>
     </Compile>

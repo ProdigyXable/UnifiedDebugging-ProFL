@@ -7,11 +7,11 @@ import sys
 # --- Machine Learning Hyper Parameters [START] --- #
 BATCH_SIZE = 1000
 LEARNING_RATE = 0.001
-EPOCHS = 10000
+EPOCHS = 100
 CLASSES = 2 # Buggy vs Non-Buggy
-LAYER_NEURONS = 512
+LAYER_NEURONS = 128
 FEATURE_NUM = 130 # 34 + (16 * 6)
-DROPOUT_RATE = 0.3
+DROPOUT_RATE = 0.5
 # --- Machine Learning Hyper Parameters [END] --- #
 
 # --- OTHER [START] --- #
@@ -39,8 +39,7 @@ def processNumFeats(data):
 def readNumFeats(dir, project):
     data = {}
     for f in os.listdir(dir):
-        #if f.endswith(".numFeats") and not "Math-66" in f and project in f: # Used for intra-project prediction
-        if f.endswith(".numFeats") and not "Math-66" in f: # Used for inter-project prediction
+        if f.endswith(".numFeats") and not "Math-66" in f and (project is "*" or project in f):
 
             line_data = open(os.path.join(dir, f),"r").readlines()
             processed_data = processNumFeats(line_data)
@@ -74,8 +73,7 @@ def readClassFeats(dir, project):
     data_sigs = {}
     for f in os.listdir(dir):
 
-        #if f.endswith(".classFeats") and not "Math-66" in f and project in f: # Used for intra-project prediction
-        if f.endswith(".classFeats") and not "Math-66" in f: # Used for inter-project prediction
+        if f.endswith(".classFeats") and not "Math-66" in f and (project is "*" or project in f):
             (processed_data, sigs) = processClassFeats(open(os.path.join(dir, f),"r").readlines()[1:])
 
             id = f.split(".")[0]
@@ -97,17 +95,18 @@ def makeNeuralNetwork():
     model.add(tensorflow.keras.layers.Dropout(DROPOUT_RATE))
     
     # --- HIDDEN LAYER 2 --- #
-    model.add(tensorflow.keras.layers.Dense(LAYER_NEURONS / 2, kernel_regularizer='l2'))
+    model.add(tensorflow.keras.layers.Dense(LAYER_NEURONS, kernel_regularizer='l2'))
     model.add(tensorflow.keras.layers.LeakyReLU())
     model.add(tensorflow.keras.layers.Dropout(DROPOUT_RATE))
     
     # --- OUTPUT LAYER --- #
-    model.add(tensorflow.keras.layers.Dense(CLASSES,kernel_regularizer='l2', activation='sigmoid'))
+    model.add(tensorflow.keras.layers.Dense(CLASSES, kernel_regularizer='l2', activation='sigmoid'))
 
     model.summary() # Output summary of neural network
 
-    model.compile(loss='binary_crossentropy', optimizer=tensorflow.keras.optimizers.Adagrad(), 
+    model.compile(loss=tensorflow.keras.losses.BinaryCrossentropy(from_logits=True), optimizer=tensorflow.keras.optimizers.Adagrad(), 
                   metrics=[
+                      tensorflow.keras.losses.BinaryCrossentropy(from_logits=True, name='binary_crossentropy'),
                       'accuracy'
                       ])
 
@@ -118,7 +117,12 @@ def model():
     print("Executing data preprocessing")
 
     print("Importing raw data")
-    projects = ["Chart", "Time", "Lang", "Math"]
+    
+    # projects = ["*"] # For inter-project prediction
+    projects = ["Chart", "Time", "Lang", "Math"] # For intra-project prediction
+    
+    print(tensorflow.config.list_physical_devices('GPU'))
+
     for project in projects:
 
         # Import raw data #
@@ -144,7 +148,7 @@ def model():
                     training_data_output.extend(raw_output_train[other_project])
 
             training_data_input = tensorflow.keras.utils.normalize(numpy.array(training_data_input)) # Normalize data
-            training_data_output = numpy.array(training_data_output)
+            training_data_output_raw = numpy.array(training_data_output)
             
             
             # Test data is the project we are trying to predict (e.g. Chart-1)
@@ -154,27 +158,39 @@ def model():
             # Since class distribution is not reasonably symmetric, manually set weights of classes to be the same
             class_weights = {}
             class_weights[0] = 1
-            class_weights[1] = setClassWeight(training_data_output)
+            # class_weights[1] = setClassWeight(training_data_output)
 
-            training_data_output = tensorflow.keras.utils.to_categorical(training_data_output, CLASSES)
-
-            print("Class weights set to", class_weights)
-
-            # Create validation subset from training data
-            validation_data_splitter = KFold(n_splits=4)
-
+            training_data_output = tensorflow.keras.utils.to_categorical(training_data_output_raw, CLASSES)
             print("--- Training Results ---")
+            
+            folds = 10
+            if(folds > 1):
+                # Create validation subset from training data
+                validation_data_splitter = KFold(n_splits=folds)
 
-            # Train model using training data, validating on validation data, 
-            # using callbacks to stop training early as needed with the aforementioned class weights
-            for indicies_train, indicies_validate in validation_data_splitter.split(training_data_input, y=training_data_output):   
+                # Train model using training data, validating on validation data, 
+                # using callbacks to stop training early as needed with the aforementioned class weights
+                for index, (indicies_train, indicies_validate) in enumerate(validation_data_splitter.split(training_data_input, y=training_data_output)):
+                    tempWeights = []
+                    for item in indicies_validate:
+                        tempWeights.append(training_data_output_raw[item])
+                    class_weights[1] = setClassWeight(tempWeights)
+                
+                    network_model.fit(class_weight=class_weights,
+                                        x=training_data_input[indicies_train], y=training_data_output[indicies_train],
+                                        batch_size=BATCH_SIZE, epochs=EPOCHS, verbose=1, 
+                                        validation_data=(training_data_input[indicies_validate], training_data_output[indicies_validate]),
+                                        callbacks=getCallback(),
+                                        )
+            else:
+                class_weights[1] = setClassWeight(training_data_output_raw)
                 network_model.fit(class_weight=class_weights,
-                                  x=training_data_input[indicies_train], y=training_data_output[indicies_train],
-                                  batch_size=BATCH_SIZE, epochs=EPOCHS, verbose=1, 
-                                  validation_data=(training_data_input[indicies_validate], training_data_output[indicies_validate]),
-                                  callbacks=getCallback(),
-                                  )
-        
+                                    x=training_data_input,
+                                    y=training_data_output,
+                                    batch_size=BATCH_SIZE,
+                                    epochs=EPOCHS
+                                    )
+
             print("--- Prediction Results ---")
 
             #output_file = open("sbfl-feats-only_" + project_prediction_id + ".susValues", "w")
@@ -188,7 +204,6 @@ def model():
                # Save new suspicious values to local file
                output_file.write(",".join([sigs[project_prediction_id][k], str(i[prediction])]))
                output_file.write("\n")
-        
             print("\n", "----------------", "\n")
             output_file.close()
 
@@ -204,8 +219,8 @@ def setClassWeight(data):
         else:
             other += 1
 
-    weight = other / positive
-    return weight * 2
+    weight = other / max(1, positive)
+    return weight * 4
 
 # These terminate training during a given K-fold
 # if validation accuracy or validation loss
@@ -213,8 +228,8 @@ def setClassWeight(data):
 def getCallback():
     return [
             tensorflow.keras.callbacks.TerminateOnNaN(),
-            tensorflow.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=EPOCHS / 50, restore_best_weights=True),
-            tensorflow.keras.callbacks.EarlyStopping(monitor='val_loss', patience=EPOCHS / 100, restore_best_weights=True, min_delta=0.0001)
+            #tensorflow.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=EPOCHS / 4, restore_best_weights=True),
+            #tensorflow.keras.callbacks.EarlyStopping(monitor='val_binary_crossentropy', patience=EPOCHS / 20, restore_best_weights=True, min_delta=0.001)
             ]
 
 model()
